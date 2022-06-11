@@ -1,7 +1,8 @@
+import datetime
 from typing import List, Dict
 import tabulate
 from services.managers import DataManager
-from services.redice_client import RedisDAO
+from services.redice_client import RedisDAO, RedisTryBody, RedisInfoBody, RedisErrorBody
 from utils.errors import OperationError
 
 
@@ -56,59 +57,53 @@ class CloudDataOperationStrategy(DataOperationStrategy):
     def send_chunk(self, chunk):
         ...
 
-    def get_status(self, data_url):
-        result = self.redis_dao.get_info(data_url)
-        if result:
-            status = result.get("status")
-            return status
-
     def check_is_operation_needed(self):
-        status = self.get_status(self.data_manager.url)
-        if not status or status == self.redis_dao.DatasetStatus.FAILED.value:
-            return True
-        if status == self.redis_dao.DatasetStatus.COMPLETED.value:
-            return self.can_be_updated()
-        return False
-
-    def can_be_updated(self):
-        old_last_modify = self.data_manager.get_last_modify()
         info = self.redis_dao.get_info(self.data_manager.url)
-        new_last_modify = info.get("last_modify")
-        return old_last_modify != new_last_modify
+        if isinstance(info, RedisInfoBody):
+            if info.status == self.redis_dao.DatasetStatus.COMPLETED.value:
+                return self.can_be_updated(info)
+            if info.status == self.redis_dao.DatasetStatus.IN_PROGRESS.value:
+                return False
+        if isinstance(info, RedisErrorBody):
+            return True
+        return True
+
+    def can_be_updated(self, info: RedisInfoBody):
+        new_last_modify = self.data_manager.get_last_modify()
+        return new_last_modify != info.last_modify
 
     def save_start_status(self):
         last_modify = self.data_manager.get_last_modify()
-        body = {
-            "status": RedisDAO.DatasetStatus.IN_PROGRESS.value,
-            "last_modify": last_modify
-        }
+        redis_info_body = RedisInfoBody(
+            status=RedisDAO.DatasetStatus.IN_PROGRESS.value,
+            timestamp=str(datetime.datetime.utcnow()),
+            last_modify=last_modify,
+        )
         self.redis_dao.save_info(
             data_url=self.data_manager.url,
-            body=body
+            body=redis_info_body
         )
 
     def save_completed_status(self):
         info = self.redis_dao.get_info(self.data_manager.url)
-        last_modify = info.get("last_modify")
-        body = {
-            "status": self.redis_dao.DatasetStatus.COMPLETED.value,
-            "last_modify": last_modify,
-        }
+        if not isinstance(info, RedisInfoBody):
+            raise OperationError("Something went wrong")
+        info.status = self.redis_dao.DatasetStatus.COMPLETED.value
         self.redis_dao.save_info(
             data_url=self.data_manager.url,
-            body=body
+            body=info
         )
 
     def save_error(self, error):
-        body = {
-            "status": self.redis_dao.DatasetStatus.FAILED.value,
-            "error": error
-        }
+        redis_error_body = RedisErrorBody(
+            status=self.redis_dao.DatasetStatus.FAILED.value,
+            error=error
+        )
         self.redis_dao.save_info(
             data_url=self.data_manager.url,
-            body=body
+            body=redis_error_body
         )
 
     def save_try(self):
-        info = self.redis_dao.get_info(self.data_manager.url)
-
+        info = RedisTryBody(timestamp=str(datetime.datetime.utcnow()))
+        self.redis_dao.save_try(self.data_manager.url, info)
