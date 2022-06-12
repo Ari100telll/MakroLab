@@ -10,8 +10,8 @@ class DataOperator:
     def set_strategy(self, strategy: DataOperationStrategy):
         self.strategy = strategy
 
-    def operate_data(self):
+    async def operate_data(self):
         if not self.strategy:
-            raise OperationError("strategy not set.")
+            raise OperationError("Strategy not set.")
 
-        self.strategy.operate()
+        await self.strategy.operate()
