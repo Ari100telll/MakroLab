@@ -1,6 +1,11 @@
 import datetime
 from typing import List, Dict
+
 import tabulate
+from injector import Injector
+
+from configs.injector import configure_dependencies
+from services.event_hub import EventHubManager
 from services.managers import DataManager
 from services.redice_client import RedisDAO, RedisTryBody, RedisInfoBody, RedisErrorBody
 from utils.errors import OperationError
@@ -31,22 +36,28 @@ class ConsoleDataOperationStrategy(DataOperationStrategy):
 
 
 class CloudDataOperationStrategy(DataOperationStrategy):
-    def __init__(self, redis_dao: RedisDAO, *args, **kwargs):
-        self.redis_dao = redis_dao
+    def __init__(self, *args, **kwargs):
+        injector = Injector([configure_dependencies])
+        self.redis_dao = injector.get(RedisDAO)
+        self.event_hub_manager = injector.get(EventHubManager)
         super(CloudDataOperationStrategy, self).__init__(*args, **kwargs)
 
-    def operate(self):
+    async def operate(self):
         is_operation_needed = self.check_is_operation_needed()
         self.save_try()
         if not is_operation_needed:
             raise OperationError("This URL already operated.")
-        self.operate_chunks()
+        await self.operate_chunks()
 
-    def operate_chunks(self):
-        self.save_start_status()
+    async def operate_chunks(self):
+        self.save_status()
         try:
             for chunk in self.data_manager.get_chunks():
-                self.send_chunk(chunk)
+                processed_count = self.get_processed_count()
+                await self.send_chunk(chunk)
+                processed_count = processed_count+len(chunk)
+                self.save_status(processed_count=processed_count)
+                print(f"Precessed {processed_count} rows")
         except Exception as e:
             self.save_error(e)
             raise OperationError("Error with saving data to cloud")
@@ -54,8 +65,8 @@ class CloudDataOperationStrategy(DataOperationStrategy):
         self.save_completed_status()
         return False
 
-    def send_chunk(self, chunk):
-        ...
+    async def send_chunk(self, chunk):
+        await self.event_hub_manager.send_chunk(chunk)
 
     def check_is_operation_needed(self):
         info = self.redis_dao.get_info(self.data_manager.url)
@@ -72,12 +83,19 @@ class CloudDataOperationStrategy(DataOperationStrategy):
         new_last_modify = self.data_manager.get_last_modify()
         return new_last_modify != info.last_modify
 
-    def save_start_status(self):
+    def get_processed_count(self):
+        info = self.redis_dao.get_info(self.data_manager.url)
+        if not isinstance(info, RedisInfoBody):
+            raise OperationError("Something went wrong")
+        return info.processed_count
+
+    def save_status(self, processed_count=0):
         last_modify = self.data_manager.get_last_modify()
         redis_info_body = RedisInfoBody(
             status=RedisDAO.DatasetStatus.IN_PROGRESS.value,
             timestamp=str(datetime.datetime.utcnow()),
             last_modify=last_modify,
+            processed_count=processed_count
         )
         self.redis_dao.save_info(
             data_url=self.data_manager.url,

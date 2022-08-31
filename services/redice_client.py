@@ -16,10 +16,11 @@ class RedisBody:
 
 
 class RedisInfoBody(RedisBody):
-    def __init__(self, status, last_modify=None, timestamp=None):
+    def __init__(self, status, last_modify=None, timestamp=None, processed_count=0):
         self.status = status
         self.timestamp = timestamp
         self.last_modify = last_modify
+        self.processed_count = processed_count
 
 
 class RedisErrorBody(RedisBody):
