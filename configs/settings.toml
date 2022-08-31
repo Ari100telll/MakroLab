@@ -6,8 +6,9 @@ CONSOLE_PROCESS = 'console'
 DEFAULT_CHUNK_SIZE = 10
 REDIS_PORT = 6379
 REDIC_SSL = 0
-REDIC_DATASET_NAME = 'dataset_status_t2'
-REDIC_UPLOADS_NAME = 'uploads_t1'
+REDIC_DATASET_NAME = 'dataset_status_t8'
+REDIC_UPLOADS_NAME = 'uploads_t11'
+REDIC_UPLOADS_NAME_ID = 'uploads_name_id_t2'
 
 [production]
 DEFAULT_CHUNK_SIZE = 20
@@ -15,3 +16,4 @@ REDIS_PORT = 6380
 REDIC_SSL = 1
 REDIC_DATASET_NAME = 'dataset_status_t1'
 REDIC_UPLOADS_NAME = 'uploads_t1'
+REDIC_UPLOADS_NAME_ID = 'uploads_name_id'
